@@ -1,6 +1,6 @@
 {
   "name": "random-access-chrome-file",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "random-access-storage instance backed by the Chrome file system api.",
   "main": "index.js",
   "dependencies": {
