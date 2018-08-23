@@ -71,7 +71,7 @@ function createFile (name, opts) {
       if (err) return onerror(err)
       requestFileSystem(window.PERSISTENT, granted, function (res) {
         fs = res
-        mkdir(folder(name), function () {
+        mkdirp(parentFolder(name), function () {
           fs.root.getFile(name, {create: true}, function (e) {
             entry = e
             entry.file(function (f) {
@@ -83,9 +83,13 @@ function createFile (name, opts) {
       }, onerror)
     })
 
-    function mkdir (name, ondone) {
+    function mkdirp (name, ondone) {
       if (!name) return ondone()
-      fs.root.getDirectory(name, {create: true}, ondone, ondone)
+      fs.root.getDirectory(name, {create: true}, ondone, function () {
+        mkdirp(parentFolder(name), function () {
+          fs.root.getDirectory(name, {create: true}, ondone, ondone)
+        })
+      })
     }
 
     function onerror (err) {
@@ -95,10 +99,11 @@ function createFile (name, opts) {
   }
 }
 
-function folder (path) {
-  const i = path.indexOf('/')
-  const j = path.indexOf('\\')
-  return path.slice(0, Math.max(0, i, j))
+function parentFolder (path) {
+  const i = path.lastIndexOf('/')
+  const j = path.lastIndexOf('\\')
+  const p = path.slice(0, Math.max(0, i, j))
+  return /^\w:$/.test(p) ? '' : p
 }
 
 function WriteRequest (pool, file, entry, mutex) {
