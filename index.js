@@ -33,7 +33,7 @@ function createFile (name, opts) {
   var readers = []
   var writers = []
 
-  return ras({read, write, open, stat, close})
+  return ras({read, write, open, stat, close, destroy})
 
   function read (req) {
     const r = readers.pop() || new ReadRequest(readers, file, entry, mutex)
@@ -54,26 +54,51 @@ function createFile (name, opts) {
     req.callback(null, file)
   }
 
+  function destroy (req) {
+    entry.remove(ondone, onerror)
+
+    function ondone () {
+      req.callback(null, null)
+    }
+
+    function onerror (err) {
+      req.callback(err, null)
+    }
+  }
+
   function open (req) {
     requestQuota(maxSize, false, function (err, granted) {
       if (err) return onerror(err)
       requestFileSystem(window.PERSISTENT, granted, function (res) {
         fs = res
-        fs.root.getFile(name, {create: true}, function (e) {
-          entry = e
-          entry.file(function (f) {
-            file = f
-            req.callback(null)
+        mkdir(folder(name), function () {
+          fs.root.getFile(name, {create: true}, function (e) {
+            entry = e
+            entry.file(function (f) {
+              file = f
+              req.callback(null)
+            }, onerror)
           }, onerror)
-        }, onerror)
+        })
       }, onerror)
     })
+
+    function mkdir (name, ondone) {
+      if (!name) return ondone()
+      fs.root.getDirectory(name, {create: true}, ondone, ondone)
+    }
 
     function onerror (err) {
       fs = file = entry = null
       req.callback(err)
     }
   }
+}
+
+function folder (path) {
+  const i = path.indexOf('/')
+  const j = path.indexOf('\\')
+  return path.slice(0, Math.max(0, i, j))
 }
 
 function WriteRequest (pool, file, entry, mutex) {
