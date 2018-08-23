@@ -1,7 +1,36 @@
 const createFile = require('./')
 
 const st = createFile('benchmark.txt')
-st.open(benchWrite)
+st.open(tinyWrites)
+
+function tinyWrites () {
+  var offset = 0
+  const buf = Buffer.alloc(1)
+  console.time('10000 tiny writes')
+  st.write(0, buf, function onwrite (err) {
+    if (err) throw err
+    offset++
+    if (offset === 10000) {
+      console.timeEnd('10000 tiny writes')
+      return tinyReads()
+    }
+    st.write(offset, buf, onwrite)
+  })
+}
+
+function tinyReads () {
+  var offset = 0
+  console.time('10000 tiny reads')
+  st.read(0, 1, function onread (err) {
+    if (err) throw err
+    offset++
+    if (offset === 10000) {
+      console.timeEnd('10000 tiny reads')
+      return benchWrite()
+    }
+    st.read(offset, 1, onread)
+  })
+}
 
 function benchRead () {
   var offset = 0
