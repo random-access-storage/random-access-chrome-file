@@ -106,9 +106,12 @@ function createFile (name, opts) {
   }
 
   function read (req) {
+    const end = req.offset + req.size
+    if (end > file.size) return req.callback(new Error('Could not satisfy length'))
+
     const io = readers.pop() || allocReader()
     io.req = req
-    io.reader.readAsArrayBuffer(file.slice(req.offset, req.offset + req.size))
+    io.reader.readAsArrayBuffer(file.slice(req.offset, end))
   }
 
   function close (req) {
