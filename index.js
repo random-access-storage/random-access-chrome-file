@@ -123,13 +123,10 @@ WriteRequest.prototype.makeWriter = function () {
     self.writer = writer
 
     writer.onwriteend = function () {
-      if (self.writer !== writer) throw new Error('nah')
       self.onwrite(null)
     }
 
     writer.onerror = function (err) {
-      if (self.writer !== writer) throw new Error('nah')
-      console.log('ONERROR', arguments)
       self.onwrite(err)
     }
 
@@ -152,7 +149,6 @@ WriteRequest.prototype.onwrite = function (err) {
   }
 
   this.pool.push(this)
-  if (err) console.log('ERROR HERE', err)
   req.callback(err, null)
 }
 
