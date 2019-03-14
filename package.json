@@ -14,12 +14,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mafintosh/random-access-chrome-file.git"
+    "url": "https://github.com/random-access-storage/random-access-chrome-file.git"
   },
   "author": "Mathias Buus (@mafintosh)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mafintosh/random-access-chrome-file/issues"
+    "url": "https://github.com/random-access-storage/random-access-chrome-file/issues"
   },
-  "homepage": "https://github.com/mafintosh/random-access-chrome-file"
+  "homepage": "https://github.com/random-access-storage/random-access-chrome-file"
 }
