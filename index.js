@@ -30,6 +30,7 @@ function createFile (name, opts) {
   var fs = null
   var file = null
   var entry = null
+  var toDestroy = null
   var readers = []
   var writers = []
 
@@ -46,6 +47,7 @@ function createFile (name, opts) {
   }
 
   function close (req) {
+    toDestroy = entry
     readers = writers = entry = file = fs = null
     req.callback(null)
   }
@@ -55,13 +57,15 @@ function createFile (name, opts) {
   }
 
   function destroy (req) {
-    entry.remove(ondone, onerror)
+    toDestroy.remove(ondone, onerror)
 
     function ondone () {
+      toDestroy = null
       req.callback(null, null)
     }
 
     function onerror (err) {
+      toDestroy = null
       req.callback(err, null)
     }
   }
