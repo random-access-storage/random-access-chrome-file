@@ -30,6 +30,7 @@ function createFile (name, opts) {
   var fs = null
   var file = null
   var entry = null
+  var toDestroy = null
   var readers = []
   var writers = []
 
@@ -55,13 +56,15 @@ function createFile (name, opts) {
   }
 
   function destroy (req) {
-    entry.remove(ondone, onerror)
+    toDestroy.remove(ondone, onerror)
 
     function ondone () {
+      toDestroy = null
       req.callback(null, null)
     }
 
     function onerror (err) {
+      toDestroy = null
       req.callback(err, null)
     }
   }
@@ -73,7 +76,7 @@ function createFile (name, opts) {
         fs = res
         mkdirp(parentFolder(name), function () {
           fs.root.getFile(name, {create: true}, function (e) {
-            entry = e
+            entry = toDestroy = e
             entry.file(function (f) {
               file = f
               req.callback(null)
