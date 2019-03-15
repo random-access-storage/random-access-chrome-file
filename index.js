@@ -47,7 +47,6 @@ function createFile (name, opts) {
   }
 
   function close (req) {
-    toDestroy = entry
     readers = writers = entry = file = fs = null
     req.callback(null)
   }
@@ -77,7 +76,7 @@ function createFile (name, opts) {
         fs = res
         mkdirp(parentFolder(name), function () {
           fs.root.getFile(name, {create: true}, function (e) {
-            entry = e
+            entry = toDestroy = e
             entry.file(function (f) {
               file = f
               req.callback(null)
