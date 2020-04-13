@@ -52,7 +52,10 @@ function createFile (name, opts) {
   }
 
   function stat (req) {
-    req.callback(null, file)
+    file.get((err, file) => {
+      if (err) return req.callback(err)
+      req.callback(null, file)
+    })
   }
 
   function destroy (req) {
@@ -77,10 +80,11 @@ function createFile (name, opts) {
         mkdirp(parentFolder(name), function () {
           fs.root.getFile(name, {create: true}, function (e) {
             entry = toDestroy = e
-            entry.file(function (f) {
-              file = f
+            file = new File(entry)
+            file.get(err => {
+              if (err) return onerror(err)
               req.callback(null)
-            }, onerror)
+            })
           }, onerror)
         })
       }, onerror)
@@ -126,6 +130,7 @@ WriteRequest.prototype.makeWriter = function () {
     self.writer = writer
 
     writer.onwriteend = function () {
+      self.file.markToUpdate()
       self.onwrite(null)
     }
 
@@ -167,19 +172,21 @@ WriteRequest.prototype.lock = function () {
 }
 
 WriteRequest.prototype.run = function (req) {
-  this.req = req
-  if (!this.writer || this.writer.length !== this.file.size) return this.makeWriter()
+  this.file.get((_, file) => {
+    this.req = req
+    if (!this.writer || this.writer.length !== file.size) return this.makeWriter()
 
-  const end = req.offset + req.size
-  if (end > this.file.size && !this.lock()) return
+    const end = req.offset + req.size
+    if (end > file.size && !this.lock()) return
 
-  if (req.offset > this.writer.length) {
-    if (req.offset > this.file.size) return this.truncate()
-    return this.makeWriter()
-  }
+    if (req.offset > this.writer.length) {
+      if (req.offset > file.size) return this.truncate()
+      return this.makeWriter()
+    }
 
-  this.writer.seek(req.offset)
-  this.writer.write(new Blob([req.data], TYPE))
+    this.writer.seek(req.offset)
+    this.writer.write(new Blob([req.data], TYPE))
+  })
 }
 
 function Mutex () {
@@ -252,8 +259,34 @@ ReadRequest.prototype.onread = function (err, buf) {
 }
 
 ReadRequest.prototype.run = function (req) {
-  const end = req.offset + req.size
-  this.req = req
-  if (end > this.file.size) return this.onread(new Error('Could not satisfy length'), null)
-  this.reader.readAsArrayBuffer(this.file.slice(req.offset, end))
+  this.file.get((_, file) => {
+    const end = req.offset + req.size
+    this.req = req
+    if (end > file.size) return this.onread(new Error('Could not satisfy length'), null)
+    this.reader.readAsArrayBuffer(file.slice(req.offset, end))
+  })
+}
+
+class File {
+  constructor(entry) {
+    this._entry = entry
+    this._file = null
+    this._update = true
+  }
+
+  markToUpdate() {
+    this._update = true
+  }
+
+  get(cb) {
+    if (this._update) {
+      this._update = false
+      return this._entry.file(f => {
+        this._file = f
+        cb(null, f)
+      }, cb)
+    }
+
+    cb(null, this._file)
+  }
 }
