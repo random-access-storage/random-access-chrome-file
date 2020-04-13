@@ -28,7 +28,6 @@ function createFile (name, opts) {
   const mutex = new Mutex()
 
   var fs = null
-  var file = null
   var entry = null
   var toDestroy = null
   var readers = []
@@ -37,25 +36,24 @@ function createFile (name, opts) {
   return ras({read, write, open, stat, close, destroy})
 
   function read (req) {
-    const r = readers.pop() || new ReadRequest(readers, file, entry, mutex)
+    const r = readers.pop() || new ReadRequest(readers, entry, mutex)
     r.run(req)
   }
 
   function write (req) {
-    const w = writers.pop() || new WriteRequest(writers, file, entry, mutex)
+    const w = writers.pop() || new WriteRequest(writers, entry, mutex)
     w.run(req)
   }
 
   function close (req) {
-    readers = writers = entry = file = fs = null
+    readers = writers = entry = fs = null
     req.callback(null)
   }
 
   function stat (req) {
-    file.get((err, file) => {
-      if (err) return req.callback(err)
+    entry.file(file => {
       req.callback(null, file)
-    })
+    }, err => req.callback(err))
   }
 
   function destroy (req) {
@@ -80,11 +78,7 @@ function createFile (name, opts) {
         mkdirp(parentFolder(name), function () {
           fs.root.getFile(name, {create: true}, function (e) {
             entry = toDestroy = e
-            file = new File(entry)
-            file.get(err => {
-              if (err) return onerror(err)
-              req.callback(null)
-            })
+            req.callback(null)
           }, onerror)
         })
       }, onerror)
@@ -100,7 +94,7 @@ function createFile (name, opts) {
     }
 
     function onerror (err) {
-      fs = file = entry = null
+      fs = entry = null
       req.callback(err)
     }
   }
@@ -113,13 +107,12 @@ function parentFolder (path) {
   return /^\w:$/.test(p) ? '' : p
 }
 
-function WriteRequest (pool, file, entry, mutex) {
-  this.writer = null
-  this.entry = entry
-  this.file = file
-  this.req = null
+function WriteRequest (pool, entry, mutex) {
   this.pool = pool
+  this.entry = entry
   this.mutex = mutex
+  this.writer = null
+  this.req = null
   this.locked = false
   this.truncating = false
 }
@@ -130,7 +123,6 @@ WriteRequest.prototype.makeWriter = function () {
     self.writer = writer
 
     writer.onwriteend = function () {
-      self.file.markToUpdate()
       self.onwrite(null)
     }
 
@@ -172,7 +164,7 @@ WriteRequest.prototype.lock = function () {
 }
 
 WriteRequest.prototype.run = function (req) {
-  this.file.get((_, file) => {
+  this.entry.file(file => {
     this.req = req
     if (!this.writer || this.writer.length !== file.size) return this.makeWriter()
 
@@ -186,7 +178,7 @@ WriteRequest.prototype.run = function (req) {
 
     this.writer.seek(req.offset)
     this.writer.write(new Blob([req.data], TYPE))
-  })
+  }, err => req.callback(err))
 }
 
 function Mutex () {
@@ -210,13 +202,13 @@ Mutex.prototype.lock = function (req) {
   return true
 }
 
-function ReadRequest (pool, file, entry, mutex) {
-  this.reader = new FileReader()
-  this.file = file
-  this.req = null
+function ReadRequest (pool, entry, mutex) {
   this.pool = pool
-  this.retry = true
+  this.entry = entry
   this.mutex = mutex
+  this.reader = new FileReader()
+  this.req = null
+  this.retry = true
   this.locked = false
 
   const self = this
@@ -259,34 +251,10 @@ ReadRequest.prototype.onread = function (err, buf) {
 }
 
 ReadRequest.prototype.run = function (req) {
-  this.file.get((_, file) => {
+  this.entry.file(file => {
     const end = req.offset + req.size
     this.req = req
     if (end > file.size) return this.onread(new Error('Could not satisfy length'), null)
     this.reader.readAsArrayBuffer(file.slice(req.offset, end))
-  })
-}
-
-class File {
-  constructor(entry) {
-    this._entry = entry
-    this._file = null
-    this._update = true
-  }
-
-  markToUpdate() {
-    this._update = true
-  }
-
-  get(cb) {
-    if (this._update) {
-      this._update = false
-      return this._entry.file(f => {
-        this._file = f
-        cb(null, f)
-      }, cb)
-    }
-
-    cb(null, this._file)
-  }
+  }, err => req.callback(err))
 }
