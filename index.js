@@ -28,7 +28,6 @@ function createFile (name, opts) {
   const mutex = new Mutex()
 
   var fs = null
-  var file = null
   var entry = null
   var toDestroy = null
   var readers = []
@@ -37,22 +36,24 @@ function createFile (name, opts) {
   return ras({read, write, open, stat, close, destroy})
 
   function read (req) {
-    const r = readers.pop() || new ReadRequest(readers, file, entry, mutex)
+    const r = readers.pop() || new ReadRequest(readers, entry, mutex)
     r.run(req)
   }
 
   function write (req) {
-    const w = writers.pop() || new WriteRequest(writers, file, entry, mutex)
+    const w = writers.pop() || new WriteRequest(writers, entry, mutex)
     w.run(req)
   }
 
   function close (req) {
-    readers = writers = entry = file = fs = null
+    readers = writers = entry = fs = null
     req.callback(null)
   }
 
   function stat (req) {
-    req.callback(null, file)
+    entry.file(file => {
+      req.callback(null, file)
+    }, err => req.callback(err))
   }
 
   function destroy (req) {
@@ -77,10 +78,7 @@ function createFile (name, opts) {
         mkdirp(parentFolder(name), function () {
           fs.root.getFile(name, {create: true}, function (e) {
             entry = toDestroy = e
-            entry.file(function (f) {
-              file = f
-              req.callback(null)
-            }, onerror)
+            req.callback(null)
           }, onerror)
         })
       }, onerror)
@@ -96,7 +94,7 @@ function createFile (name, opts) {
     }
 
     function onerror (err) {
-      fs = file = entry = null
+      fs = entry = null
       req.callback(err)
     }
   }
@@ -109,13 +107,12 @@ function parentFolder (path) {
   return /^\w:$/.test(p) ? '' : p
 }
 
-function WriteRequest (pool, file, entry, mutex) {
-  this.writer = null
-  this.entry = entry
-  this.file = file
-  this.req = null
+function WriteRequest (pool, entry, mutex) {
   this.pool = pool
+  this.entry = entry
   this.mutex = mutex
+  this.writer = null
+  this.req = null
   this.locked = false
   this.truncating = false
 }
@@ -167,19 +164,21 @@ WriteRequest.prototype.lock = function () {
 }
 
 WriteRequest.prototype.run = function (req) {
-  this.req = req
-  if (!this.writer || this.writer.length !== this.file.size) return this.makeWriter()
+  this.entry.file(file => {
+    this.req = req
+    if (!this.writer || this.writer.length !== file.size) return this.makeWriter()
 
-  const end = req.offset + req.size
-  if (end > this.file.size && !this.lock()) return
+    const end = req.offset + req.size
+    if (end > file.size && !this.lock()) return
 
-  if (req.offset > this.writer.length) {
-    if (req.offset > this.file.size) return this.truncate()
-    return this.makeWriter()
-  }
+    if (req.offset > this.writer.length) {
+      if (req.offset > file.size) return this.truncate()
+      return this.makeWriter()
+    }
 
-  this.writer.seek(req.offset)
-  this.writer.write(new Blob([req.data], TYPE))
+    this.writer.seek(req.offset)
+    this.writer.write(new Blob([req.data], TYPE))
+  }, err => req.callback(err))
 }
 
 function Mutex () {
@@ -203,13 +202,13 @@ Mutex.prototype.lock = function (req) {
   return true
 }
 
-function ReadRequest (pool, file, entry, mutex) {
-  this.reader = new FileReader()
-  this.file = file
-  this.req = null
+function ReadRequest (pool, entry, mutex) {
   this.pool = pool
-  this.retry = true
+  this.entry = entry
   this.mutex = mutex
+  this.reader = new FileReader()
+  this.req = null
+  this.retry = true
   this.locked = false
 
   const self = this
@@ -252,8 +251,10 @@ ReadRequest.prototype.onread = function (err, buf) {
 }
 
 ReadRequest.prototype.run = function (req) {
-  const end = req.offset + req.size
-  this.req = req
-  if (end > this.file.size) return this.onread(new Error('Could not satisfy length'), null)
-  this.reader.readAsArrayBuffer(this.file.slice(req.offset, end))
+  this.entry.file(file => {
+    const end = req.offset + req.size
+    this.req = req
+    if (end > file.size) return this.onread(new Error('Could not satisfy length'), null)
+    this.reader.readAsArrayBuffer(file.slice(req.offset, end))
+  }, err => req.callback(err))
 }
