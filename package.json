@@ -4,6 +4,7 @@
   "description": "random-access-storage instance backed by the Chrome file system api.",
   "main": "index.js",
   "dependencies": {
+    "mutexify": "^1.3.0",
     "random-access-storage": "^1.3.0"
   },
   "devDependencies": {

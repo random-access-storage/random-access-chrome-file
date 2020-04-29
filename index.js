@@ -1,4 +1,5 @@
 const ras = require('random-access-storage')
+const mutexify = require('mutexify')
 
 const TYPE = {type: 'octet/stream'}
 const requestFileSystem = window.requestFileSystem || window.webkitRequestFileSystem
@@ -29,6 +30,7 @@ function createFile (name, opts) {
 
   var fs = null
   var entry = null
+  var file = null
   var toDestroy = null
   var readers = []
   var writers = []
@@ -36,12 +38,12 @@ function createFile (name, opts) {
   return ras({read, write, open, stat, close, destroy})
 
   function read (req) {
-    const r = readers.pop() || new ReadRequest(readers, entry, mutex)
+    const r = readers.pop() || new ReadRequest(readers, entry, file, mutex)
     r.run(req)
   }
 
   function write (req) {
-    const w = writers.pop() || new WriteRequest(writers, entry, mutex)
+    const w = writers.pop() || new WriteRequest(writers, entry, file, mutex)
     w.run(req)
   }
 
@@ -51,9 +53,10 @@ function createFile (name, opts) {
   }
 
   function stat (req) {
-    entry.file(file => {
+    file.get((err, file) => {
+      if (err) return req.callback(err)
       req.callback(null, file)
-    }, err => req.callback(err))
+    })
   }
 
   function destroy (req) {
@@ -78,7 +81,11 @@ function createFile (name, opts) {
         mkdirp(parentFolder(name), function () {
           fs.root.getFile(name, {create: true}, function (e) {
             entry = toDestroy = e
-            req.callback(null)
+            file = new EntryFile(entry)
+            file.get((err) => {
+              if (err) return onerror(err)
+              req.callback(null)
+            })
           }, onerror)
         })
       }, onerror)
@@ -107,9 +114,10 @@ function parentFolder (path) {
   return /^\w:$/.test(p) ? '' : p
 }
 
-function WriteRequest (pool, entry, mutex) {
+function WriteRequest (pool, entry, file, mutex) {
   this.pool = pool
   this.entry = entry
+  this.file = file
   this.mutex = mutex
   this.writer = null
   this.req = null
@@ -122,7 +130,8 @@ WriteRequest.prototype.makeWriter = function () {
   this.entry.createWriter(function (writer) {
     self.writer = writer
 
-    writer.onwriteend = function () {
+    writer.onwriteend = function (e) {
+      self.file.updateSize(e.currentTarget.length)
       self.onwrite(null)
     }
 
@@ -164,21 +173,21 @@ WriteRequest.prototype.lock = function () {
 }
 
 WriteRequest.prototype.run = function (req) {
-  this.entry.file(file => {
-    this.req = req
-    if (!this.writer || this.writer.length !== file.size) return this.makeWriter()
+  var file = this.file
 
-    const end = req.offset + req.size
-    if (end > file.size && !this.lock()) return
+  this.req = req
+  if (!this.writer || this.writer.length !== file.size) return this.makeWriter()
 
-    if (req.offset > this.writer.length) {
-      if (req.offset > file.size) return this.truncate()
-      return this.makeWriter()
-    }
+  const end = req.offset + req.size
+  if (end > file.size && !this.lock()) return
 
-    this.writer.seek(req.offset)
-    this.writer.write(new Blob([req.data], TYPE))
-  }, err => req.callback(err))
+  if (req.offset > this.writer.length) {
+    if (req.offset > file.size) return this.truncate()
+    return this.makeWriter()
+  }
+
+  this.writer.seek(req.offset)
+  this.writer.write(new Blob([req.data], TYPE))
 }
 
 function Mutex () {
@@ -202,9 +211,10 @@ Mutex.prototype.lock = function (req) {
   return true
 }
 
-function ReadRequest (pool, entry, mutex) {
+function ReadRequest (pool, entry, file, mutex) {
   this.pool = pool
   this.entry = entry
+  this.file = file
   this.mutex = mutex
   this.reader = new FileReader()
   this.req = null
@@ -251,10 +261,53 @@ ReadRequest.prototype.onread = function (err, buf) {
 }
 
 ReadRequest.prototype.run = function (req) {
-  this.entry.file(file => {
+  this.file.get((err, file) => {
+    if (err) return req.callback(err)
+
     const end = req.offset + req.size
     this.req = req
     if (end > file.size) return this.onread(new Error('Could not satisfy length'), null)
     this.reader.readAsArrayBuffer(file.slice(req.offset, end))
-  }, err => req.callback(err))
+  })
+}
+
+class EntryFile {
+  constructor (entry) {
+    this._entry = entry
+    this._lock = mutexify()
+    this._file = null
+    this._size = 0
+  }
+
+  get locked () {
+    return this._lock.locked
+  }
+
+  get size () {
+    return this._size
+  }
+
+  updateSize (size) {
+    this._size = size
+    this._file = null
+  }
+
+  get (cb) {
+    if (this._file) {
+      cb(null, this._file)
+      return
+    }
+
+    this._lock(release => {
+      if (this._file) {
+        return release(cb, null, this._file)
+      }
+
+      this._entry.file(file => {
+        this._file = file
+        this._size = file.size
+        release(cb, null, file)
+      }, err => release(cb, err))
+    })
+  }
 }
