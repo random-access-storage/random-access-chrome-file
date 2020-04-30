@@ -16,9 +16,10 @@
     "tape": "^5.0.0"
   },
   "scripts": {
-    "test": "browserify ./test.js | tape-puppet --devtools",
+    "test": "node browser-runner.js test.js",
     "posttest": "npm run lint",
-    "lint": "standard"
+    "lint": "standard",
+    "bench": "node browser-runner.js bench.js"
   },
   "repository": {
     "type": "git",
