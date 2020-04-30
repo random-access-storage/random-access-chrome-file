@@ -37,7 +37,11 @@ function benchRead () {
   console.time('512mb read')
   st.read(0, 65536, function onread (err, buf) {
     if (err) throw err
-    if (offset >= 512 * 1024 * 1024) return console.timeEnd('512mb read')
+    if (offset >= 512 * 1024 * 1024) {
+      console.timeEnd('512mb read')
+      console.log('### EXIT')
+      return
+    }
     st.read(offset += buf.length, 65536, onread)
   })
 }
