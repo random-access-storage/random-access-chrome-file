@@ -131,8 +131,7 @@ WriteRequest.prototype.makeWriter = function () {
     self.writer = writer
 
     writer.onwriteend = function (e) {
-      self.file.updateSize(e.currentTarget.length)
-      self.onwrite(null)
+      self.onwrite(null, e)
     }
 
     writer.onerror = function (err) {
@@ -143,13 +142,17 @@ WriteRequest.prototype.makeWriter = function () {
   })
 }
 
-WriteRequest.prototype.onwrite = function (err) {
+WriteRequest.prototype.onwrite = function (err, e) {
   const req = this.req
   this.req = null
 
   if (this.locked) {
     this.locked = false
     this.mutex.release()
+  }
+
+  if (!err) {
+    this.file.updateSize(e.currentTarget.length, this.truncating)
   }
 
   if (this.truncating) {
@@ -244,7 +247,16 @@ ReadRequest.prototype.onread = function (err, buf) {
 
   if (err && this.retry) {
     this.retry = false
-    if (this.lock(this)) this.run(req)
+    if (this.lock(this)) {
+      this.file.clearFile()
+      this.run(req)
+    }
+    return
+  }
+
+  if (err && err.name === 'NotReadableError') {
+    this.file.clearFile()
+    this.run(req)
     return
   }
 
@@ -287,8 +299,15 @@ class EntryFile {
     return this._size
   }
 
-  updateSize (size) {
-    this._size = size
+  updateSize (size, truncating = false) {
+    if (truncating || size > this._size) {
+      this._size = size
+    }
+
+    this.clearFile()
+  }
+
+  clearFile () {
     this._file = null
   }
 

@@ -10,7 +10,7 @@
   "devDependencies": {
     "budo": "^11.6.3",
     "puppeteer": "^3.0.2",
-    "random-access-test": "github:random-access-storage/random-access-test",
+    "random-access-test": "^1.0.0",
     "standard": "^11.0.1",
     "tap-finished": "0.0.1",
     "tape": "^5.0.0"
