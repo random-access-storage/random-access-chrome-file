@@ -246,17 +246,17 @@ ReadRequest.prototype.onread = function (err, buf) {
   const req = this.req
 
   if (err && this.retry) {
+    if (err.name === 'NotReadableError') {
+      this.file.clearFile()
+      this.run(req)
+      return
+    }
+
     this.retry = false
     if (this.lock(this)) {
       this.file.clearFile()
       this.run(req)
     }
-    return
-  }
-
-  if (err && err.name === 'NotReadableError') {
-    this.file.clearFile()
-    this.run(req)
     return
   }
 

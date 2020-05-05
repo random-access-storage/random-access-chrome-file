@@ -32,7 +32,7 @@ async function runTests (ev) {
 
   page.on('console', msg => {
     msg = msg.text()
-    if (msg.includes('### EXIT')) {
+    if (msg.includes('BROWSER_RUNNER_EXIT')) {
       shutdown()
     } else {
       results.push(`${msg}\n`)
