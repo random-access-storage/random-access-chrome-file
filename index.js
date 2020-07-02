@@ -249,7 +249,10 @@ ReadRequest.prototype.onread = function (err, buf) {
   const req = this.req
 
   if (err && this.retry) {
-    this.retry = false
+    if (err.code !== 0) {
+      this.retry = false
+    }
+
     if (this.lock(this)) {
       this.file.clearFile()
       this.run(req)
@@ -294,7 +297,7 @@ class EntryFile {
   }
 
   updateSize (size) {
-    if (!this._truncated) {
+    if (!this._truncated && size > this._size) {
       this._size = size
     }
 
