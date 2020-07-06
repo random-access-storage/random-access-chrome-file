@@ -1,5 +1,8 @@
 # random-access-chrome-file
 
+[![Build Status](https://travis-ci.com/random-access-storage/random-access-chrome-file.svg?branch=master)](https://travis-ci.com/random-access-storage/random-access-chrome-file)
+[![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
+
 A [random-access-storage](https://github.com/random-access-storage/random-access-storage) instance backed by the Chrome file system api
 
 ```
