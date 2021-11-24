@@ -4,7 +4,7 @@ const st = createFile('benchmark.txt')
 st.open(tinyWrites)
 
 function tinyWrites () {
-  var offset = 0
+  let offset = 0
   const buf = Buffer.alloc(1)
   console.time('10000 tiny writes')
   st.write(0, buf, function onwrite (err) {
@@ -19,7 +19,7 @@ function tinyWrites () {
 }
 
 function tinyReads () {
-  var offset = 0
+  let offset = 0
   console.time('10000 tiny reads')
   st.read(0, 1, function onread (err) {
     if (err) throw err
@@ -33,7 +33,7 @@ function tinyReads () {
 }
 
 function benchRead () {
-  var offset = 0
+  let offset = 0
   console.time('512mb read')
   st.read(0, 65536, function onread (err, buf) {
     if (err) throw err
@@ -43,7 +43,7 @@ function benchRead () {
 }
 
 function benchWrite () {
-  var offset = 0
+  let offset = 0
   const buf = Buffer.alloc(65536).fill('hi')
   console.time('512mb write')
   st.write(offset, buf, function onwrite (err) {

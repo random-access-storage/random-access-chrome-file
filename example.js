@@ -1,7 +1,7 @@
 const createFile = require('./')
 
 const st = createFile('/some/folder/hello-world.txt')
-var missing = 2
+let missing = 2
 
 st.write(0, Buffer.from('hello '), done)
 st.write(6, Buffer.from('world'), done)
