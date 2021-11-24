@@ -1,6 +1,6 @@
 const ras = require('random-access-storage')
 
-const TYPE = {type: 'octet/stream'}
+const TYPE = { type: 'octet/stream' }
 const requestFileSystem = window.requestFileSystem || window.webkitRequestFileSystem
 const persistentStorage = navigator.persistentStorage || navigator.webkitPersistentStorage
 const FileReader = window.FileReader
@@ -27,13 +27,14 @@ function createFile (name, opts) {
   const maxSize = opts.maxSize || createFile.DEFAULT_MAX_SIZE
   const mutex = new Mutex()
 
-  var fs = null
-  var entry = null
-  var toDestroy = null
-  var readers = []
-  var writers = []
+  let fs = null
+  let entry = null
+  let toDestroy = null
+  let readers = []
+  let writers = []
+  let deleters = []
 
-  return ras({read, write, open, stat, close, destroy})
+  return ras({ read, write, del, open, stat, close, destroy })
 
   function read (req) {
     const r = readers.pop() || new ReadRequest(readers, entry, mutex)
@@ -45,8 +46,13 @@ function createFile (name, opts) {
     w.run(req)
   }
 
+  function del (req) {
+    const d = deleters.pop() || new DeleteRequest(deleters, entry, mutex)
+    d.run(req)
+  }
+
   function close (req) {
-    readers = writers = entry = fs = null
+    readers = writers = deleters = entry = fs = null
     req.callback(null)
   }
 
@@ -76,7 +82,7 @@ function createFile (name, opts) {
       requestFileSystem(window.PERSISTENT, granted, function (res) {
         fs = res
         mkdirp(parentFolder(name), function () {
-          fs.root.getFile(name, {create: true}, function (e) {
+          fs.root.getFile(name, { create: true }, function (e) {
             entry = toDestroy = e
             req.callback(null)
           }, onerror)
@@ -86,9 +92,9 @@ function createFile (name, opts) {
 
     function mkdirp (name, ondone) {
       if (!name) return ondone()
-      fs.root.getDirectory(name, {create: true}, ondone, function () {
+      fs.root.getDirectory(name, { create: true }, ondone, function () {
         mkdirp(parentFolder(name), function () {
-          fs.root.getDirectory(name, {create: true}, ondone, ondone)
+          fs.root.getDirectory(name, { create: true }, ondone, ondone)
         })
       })
     }
@@ -166,10 +172,10 @@ WriteRequest.prototype.lock = function () {
 WriteRequest.prototype.run = function (req) {
   this.entry.file(file => {
     this.req = req
+
     if (!this.writer || this.writer.length !== file.size) return this.makeWriter()
 
-    const end = req.offset + req.size
-    if (end > file.size && !this.lock()) return
+    if (req.offset + req.size > file.size && !this.lock()) return
 
     if (req.offset > this.writer.length) {
       if (req.offset > file.size) return this.truncate()
@@ -188,7 +194,7 @@ function Mutex () {
 Mutex.prototype.release = function () {
   const queued = this.queued
   this.queued = null
-  for (var i = 0; i < queued.length; i++) {
+  for (let i = 0; i < queued.length; i++) {
     queued[i].run(queued[i].req)
   }
 }
@@ -256,5 +262,63 @@ ReadRequest.prototype.run = function (req) {
     this.req = req
     if (end > file.size) return this.onread(new Error('Could not satisfy length'), null)
     this.reader.readAsArrayBuffer(file.slice(req.offset, end))
+  }, err => req.callback(err))
+}
+
+function DeleteRequest (pool, entry, mutex) {
+  this.pool = pool
+  this.entry = entry
+  this.mutex = mutex
+  this.writer = null
+  this.req = null
+  this.locked = false
+}
+
+DeleteRequest.prototype.makeWriter = function () {
+  const self = this
+  this.entry.createWriter(function (writer) {
+    self.writer = writer
+
+    writer.onwriteend = function () {
+      self.onwrite(null)
+    }
+
+    writer.onerror = function (err) {
+      self.onwrite(err)
+    }
+
+    self.run(self.req)
+  })
+}
+
+DeleteRequest.prototype.onwrite = function (err) {
+  const req = this.req
+  this.req = null
+
+  if (this.locked) {
+    this.locked = false
+    this.mutex.release()
+  }
+
+  this.pool.push(this)
+  req.callback(err, null)
+}
+
+DeleteRequest.prototype.lock = function () {
+  if (this.locked) return true
+  this.locked = this.mutex.lock(this)
+  return this.locked
+}
+
+DeleteRequest.prototype.run = function (req) {
+  this.entry.file(file => {
+    this.req = req
+
+    if (req.offset + req.size < file.size) return req.callback(null)
+
+    if (!this.writer) return this.makeWriter()
+    if (!this.lock()) return
+
+    this.writer.truncate(req.offset)
   }, err => req.callback(err))
 }
